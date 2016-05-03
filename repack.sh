@@ -45,12 +45,18 @@ echo "
 <dict>
     <key>application-identifier</key>
     <string>$BUNDLE</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>$PREFIX</string>
     <key>get-task-allow</key>
     <true/>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$BUNDLE</string>
+    </array>
 </dict>
 </plist>
-" > ResourceRules.xcent
-plutil -convert binary1 ResourceRules.xcent
+" > $APP_NAME.xcent
+plutil -convert binary1 $APP_NAME.xcent
 
 #生成plist
 echo "
@@ -86,12 +92,11 @@ plutil -convert binary1 ResourceRules.plist
 rm -rf "Payload/$APP_NAME/_CodeSignature"
 rm -rf "Payload/$APP_NAME/embedded.mobileprovision"
 cp "$PROVISION" "Payload/$APP_NAME/embedded.mobileprovision"
-cp "ResourceRules.plist" "Payload/$APP_NAME/ResourceRules.plist"
 
 #签名
-/usr/bin/codesign --force --sign "$CERT"                                   \
-                  --resource-rules="Payload/$APP_NAME/ResourceRules.plist" \
-                  --entitlements "ResourceRules.xcent" "Payload/$APP_NAME" \
+/usr/bin/codesign --force --sign "$CERT"                               \
+                  --resource-rules="ResourceRules.plist"               \
+                  --entitlements "$APP_NAME.xcent" "Payload/$APP_NAME" \
                   > /dev/null
 
 #打包
@@ -106,6 +111,6 @@ cp "ResourceRules.plist" "Payload/$APP_NAME/ResourceRules.plist"
 security delete-keychain "$APP_NAME.keychain"
 
 #销毁
-rm -rf "ResourceRules.xcent"
+rm -rf "$APP_NAME.xcent"
 rm -rf "ResourceRules.plist"
 rm -rf "Payload"
