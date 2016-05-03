@@ -92,11 +92,12 @@ plutil -convert binary1 ResourceRules.plist
 rm -rf "Payload/$APP_NAME/_CodeSignature"
 rm -rf "Payload/$APP_NAME/embedded.mobileprovision"
 cp "$PROVISION" "Payload/$APP_NAME/embedded.mobileprovision"
+cp "ResourceRules.plist" "Payload/$APP_NAME/ResourceRules.plist"
 
 #签名
-/usr/bin/codesign --force --sign "$CERT"                               \
-                  --resource-rules="ResourceRules.plist"               \
-                  --entitlements "$APP_NAME.xcent" "Payload/$APP_NAME" \
+/usr/bin/codesign --force --sign "$CERT"                                   \
+                  --resource-rules "Payload/$APP_NAME/ResourceRules.plist" \
+                  --entitlements "$APP_NAME.xcent" "Payload/$APP_NAME"     \
                   > /dev/null
 
 #打包
