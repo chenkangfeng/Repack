@@ -27,9 +27,9 @@ fi
 APP_NAME=$(ls Payload)
 
 #导入签名
-security create-keychain -p "$APP_NAME" "$APP_NAME.keychain"
-security unlock-keychain -p "$APP_NAME" "$APP_NAME.keychain"
-security import "$P12_NAME" -k "$APP_NAME.keychain" -P "$P12_PWD" -T /usr/bin/codesign
+security create-keychain -p $APP_NAME $APP_NAME.keychain
+security unlock-keychain -p $APP_NAME $APP_NAME.keychain
+security import $P12_NAME -k $APP_NAME.keychain -P $P12_PWD -T /usr/bin/codesign
 
 #初始化信息
 CERT=$(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | tail -1)
@@ -38,10 +38,10 @@ BUNDLE=$(cat $PROVISION | egrep -A1 -a "application-identifier" | egrep "$PREFIX
 echo "\033[31m$CERT\n$BUNDLE\033[0m"
 
 #生成xcent
-echo "
-<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
-<plist version=\"1.0\">
+cat > $APP_NAME.xcent << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
 <dict>
     <key>application-identifier</key>
     <string>$BUNDLE</string>
@@ -55,14 +55,14 @@ echo "
     </array>
 </dict>
 </plist>
-" > $APP_NAME.xcent
+EOF 
 plutil -convert binary1 $APP_NAME.xcent
 
 #生成plist
-echo "
-<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
-<plist version=\"1.0\">
+cat > ResourceRules.plist << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
 <dict>
     <key>rules</key>
     <dict>
@@ -85,33 +85,31 @@ echo "
     </dict>
 </dict>
 </plist>
-" > ResourceRules.plist
+EOF
 plutil -convert binary1 ResourceRules.plist
 
 #替换证书
-rm -rf "Payload/$APP_NAME/_CodeSignature"
-rm -rf "Payload/$APP_NAME/embedded.mobileprovision"
-cp "$PROVISION" "Payload/$APP_NAME/embedded.mobileprovision"
-cp "ResourceRules.plist" "Payload/$APP_NAME/ResourceRules.plist"
+rm -rf Payload/$APP_NAME/_CodeSignature
+rm -rf Payload/$APP_NAME/embedded.mobileprovision
+cp $PROVISION Payload/$APP_NAME/embedded.mobileprovision
+cp ResourceRules.plist Payload/$APP_NAME/ResourceRules.plist
 
 #签名
-/usr/bin/codesign --force --sign "$CERT"                                   \
-                  --resource-rules "Payload/$APP_NAME/ResourceRules.plist" \
-                  --entitlements "$APP_NAME.xcent" "Payload/$APP_NAME"     \
+/usr/bin/codesign --force --sign $CERT                                   \
+                  --resource-rules Payload/$APP_NAME/ResourceRules.plist \
+                  --entitlements $APP_NAME.xcent Payload/$APP_NAME       \
                   > /dev/null
 
 #打包
-/usr/bin/xcrun -sdk iphoneos PackageApplication                     \
-               -v "Payload/$APP_NAME"                               \
-               -o "$SCRIPT_PATH/$IPA_NAME"                          \
-               --sign "$CERT"                                       \
-               --embed "Payload/$APP_NAME/embedded.mobileprovision" \
+/usr/bin/xcrun -sdk iphoneos PackageApplication -v Payload/$APP_NAME \
+               -o $SCRIPT_PATH/$IPA_NAME --sign $CERT                \
+               --embed Payload/$APP_NAME/embedded.mobileprovision    \
                > /dev/null
 
 #删除签名
-security delete-keychain "$APP_NAME.keychain"
+security delete-keychain $APP_NAME.keychain
 
 #销毁
-rm -rf "$APP_NAME.xcent"
-rm -rf "ResourceRules.plist"
-rm -rf "Payload"
+rm -rf $APP_NAME.xcent
+rm -rf ResourceRules.plist
+rm -rf Payload
