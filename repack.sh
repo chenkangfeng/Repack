@@ -1,12 +1,7 @@
 #!/bin/sh
 
-if [ $# -lt 1 ]; then
-    echo "Usage:$BASH_SOURCE ipa"
-    exit -1
-fi
+#################### 配置 ####################
 
-#ipa包名
-IPA_NAME=$1
 #p12文件
 P12_NAME="app.p12"
 #p12文件密码
@@ -14,22 +9,57 @@ P12_PWD="123"
 #证书
 PROVISION="app.mobileprovision"
 
+if [ $# -ne 2 ]; then
+    echo "Usage: $BASH_SOURCE [-p app] [-r ipa]" && exit
+fi
+
+while getopts "p:r:" OPTION
+do
+    case "$OPTION" in
+        "p")
+            APP_NAME="$OPTARG"
+            if [ ! -f $APP_NAME ]; then
+                echo "$APP_NAME not exist" && exit
+            fi
+            IPA_NAME="${APP_NAME%.*}.ipa"
+            NEED_UNZIP=false;;
+        "r")
+            IPA_NAME="$OPTARG"
+            if [ ! -f $IPA_NAME ]; then
+                echo "$IPA_NAME not exist" && exit
+            fi
+            APP_NAME="${IPA_NAME%.*}.app"
+            NEED_UNZIP=true;;
+        "?")
+            echo "\033[1A\033[K\c"
+            echo "Usage: $BASH_SOURCE [-p app] [-r ipa]" && exit;;
+    esac
+done
+
 #################### 运行 ####################
 
 #初始化
 SCRIPT_PATH=$(cd $(dirname $BASH_SOURCE); pwd)
+OUTPUT_PATH="$SCRIPT_PATH/Package"
 cd $SCRIPT_PATH
 
-if [ -f $IPA_NAME ]; then
-    unzip -o $IPA_NAME > /dev/null
-    rm -rf $IPA_NAME
+if [ -f $OUTPUT_PATH ]; then
+    rm -rf $OUTPUT_PATH
 fi
-APP_NAME=$(ls Payload)
+mkdir $OUTPUT_PATH
+if [ $NEED_UNZIP ]; then
+    unzip -o "$IPA_NAME" -d "$OUTPUT_PATH/" > /dev/null
+    rm -rf "$IPA_NAME"
+else
+    mkdir "$OUTPUT_PATH/Payload"
+    cp -rf "$APP_NAME" "$OUTPUT_PATH/Payload" > /dev/null
+fi
+cd $OUTPUT_PATH
 
 #导入签名
-security create-keychain -p $APP_NAME $APP_NAME.keychain
-security unlock-keychain -p $APP_NAME $APP_NAME.keychain
-security import $P12_NAME -k $APP_NAME.keychain -P $P12_PWD -T /usr/bin/codesign
+security create-keychain -p "$APP_NAME" "$APP_NAME.keychain"
+security unlock-keychain -p "$APP_NAME" "$APP_NAME.keychain"
+security import "$P12_NAME" -k "$APP_NAME.keychain" -P "$P12_PWD" -T /usr/bin/codesign
 
 #初始化信息
 CERT=$(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | tail -1)
@@ -38,7 +68,7 @@ BUNDLE=$(cat $PROVISION | egrep -A1 -a "application-identifier" | egrep "$PREFIX
 echo "\033[31m$CERT\n$BUNDLE\033[0m"
 
 #生成xcent
-cat > $APP_NAME.xcent << EOF
+cat > "$APP_NAME.xcent" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -56,10 +86,10 @@ cat > $APP_NAME.xcent << EOF
 </dict>
 </plist>
 EOF 
-plutil -convert binary1 $APP_NAME.xcent
+plutil -convert binary1 "$APP_NAME.xcent"
 
 #生成plist
-cat > ResourceRules.plist << EOF
+cat "ResourceRules.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -86,30 +116,30 @@ cat > ResourceRules.plist << EOF
 </dict>
 </plist>
 EOF
-plutil -convert binary1 ResourceRules.plist
+plutil -convert binary1 "ResourceRules.plist"
 
 #替换证书
-rm -rf Payload/$APP_NAME/_CodeSignature
-rm -rf Payload/$APP_NAME/embedded.mobileprovision
-cp $PROVISION Payload/$APP_NAME/embedded.mobileprovision
-cp ResourceRules.plist Payload/$APP_NAME/ResourceRules.plist
+rm -rf "Payload/$APP_NAME/_CodeSignature"
+rm -rf "Payload/$APP_NAME/embedded.mobileprovision"
+cp "$PROVISION" "Payload/$APP_NAME/embedded.mobileprovision"
+cp "ResourceRules.plist" "Payload/$APP_NAME/ResourceRules.plist"
 
 #签名
-/usr/bin/codesign --force --sign $CERT                                   \
-                  --resource-rules Payload/$APP_NAME/ResourceRules.plist \
-                  --entitlements $APP_NAME.xcent Payload/$APP_NAME       \
+/usr/bin/codesign --force --sign "$CERT"                                   \
+                  --resource-rules "Payload/$APP_NAME/ResourceRules.plist" \
+                  --entitlements "$APP_NAME.xcent" "Payload/$APP_NAME"     \
                   > /dev/null
 
 #打包
-/usr/bin/xcrun -sdk iphoneos PackageApplication -v Payload/$APP_NAME \
-               -o $SCRIPT_PATH/$IPA_NAME --sign $CERT                \
-               --embed Payload/$APP_NAME/embedded.mobileprovision    \
+/usr/bin/xcrun -sdk iphoneos PackageApplication -v "Payload/$APP_NAME" \
+               -o "$OUTPUT_PATH/$IPA_NAME" --sign "$CERT"              \
+               --embed "Payload/$APP_NAME/embedded.mobileprovision"    \
                > /dev/null
 
 #删除签名
-security delete-keychain $APP_NAME.keychain
+security delete-keychain "$APP_NAME.keychain"
 
 #销毁
-rm -rf $APP_NAME.xcent
-rm -rf ResourceRules.plist
-rm -rf Payload
+rm -rf "$APP_NAME.xcent"
+rm -rf "ResourceRules.plist"
+rm -rf "Payload"
