@@ -66,6 +66,12 @@ PREFIX=$(echo $CERT | egrep "[(].*[^)]" -o | cut -b 2-)
 BUNDLE=$(cat $PROVISION | egrep -A1 -a "application-identifier" | egrep "$PREFIX[.|-|0-9|a-z|A-Z]*" -o)
 echo "\033[31m$CERT\n$BUNDLE\033[0m"
 
+#替换Bundle
+INFO_PLIST=$(ls "$OUTPUT_PATH/Payload/$APP_NAME/*Info.plist")
+plutil -convert xml1 "$INFO_PLIST"
+OLD_BUNDLE=$(cat "$INFO_PLIST" | egrep -A1 -a "CFBundleIdentifier" | egrep "<string>.[^<]*" -o | cut -b 9-)
+sed -i "" "s/$OLD_BUNDLE/$BUNDLE/g" "$INFO_PLIST"
+
 #生成xcent
 cat > "$OUTPUT_PATH/$APP_NAME.xcent" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
