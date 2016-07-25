@@ -1,5 +1,8 @@
 #!/bin/sh
 
+SCRIPT_PATH=$(cd $(dirname $BASH_SOURCE); pwd)
+cd $SCRIPT_PATH
+
 #################### 配置 ####################
 
 #p12文件
@@ -8,51 +11,54 @@ P12_NAME="app.p12"
 P12_PWD=""
 #证书
 PROVISION="app.mobileprovision"
+#输出路径
+OUTPUT_PATH="$SCRIPT_PATH/Package"
+#错误信息
+ERROR_MESSAGE="Usage:$(basename $BASH_SOURCE) [-p app] [-r ipa]"
 
 if [ $# -ne 2 ]; then
-    echo "Usage: $BASH_SOURCE [-p app] [-r ipa]" && exit
+    echo $ERROR_MESSAGE && exit
 fi
 
-while getopts "p:r:" OPTION
+while getopts ":p:r:o:" OPTION
 do
     case "$OPTION" in
         "p")
             APP_NAME="$OPTARG"
             if [ ! -d $APP_NAME ]; then
-                echo "$APP_NAME not exist" && exit
+                echo "$APP_NAME app not exist" && exit
             fi
+            WORK_PATH=$(dirname $APP_NAME)
+            APP_NAME=$(basename $APP_NAME)
             IPA_NAME="${APP_NAME%.*}.ipa"
             NEED_UNZIP=false;;
         "r")
             IPA_NAME="$OPTARG"
             if [ ! -f $IPA_NAME ]; then
-                echo "$IPA_NAME not exist" && exit
+                echo "$IPA_NAME ipa not exist" && exit
             fi
+            WORK_PATH=$(dirname $IPA_NAME)
+            IPA_NAME=$(basename $IPA_NAME)
             APP_NAME="${IPA_NAME%.*}.app"
             NEED_UNZIP=true;;
         "?")
-            echo "\033[1A\033[K\c"
-            echo "Usage: $BASH_SOURCE [-p app] [-r ipa]" && exit;;
+            echo $ERROR_MESSAGE && exit;;
     esac
 done
 
 #################### 运行 ####################
 
 #初始化
-SCRIPT_PATH=$(cd $(dirname $BASH_SOURCE); pwd)
-OUTPUT_PATH="$SCRIPT_PATH/Package"
-cd $SCRIPT_PATH
-
 if [ -d $OUTPUT_PATH ]; then
     rm -rf $OUTPUT_PATH
 fi
 mkdir $OUTPUT_PATH
 if $NEED_UNZIP; then
-    unzip -o "$IPA_NAME" -d "$OUTPUT_PATH/" > /dev/null
-    #rm -rf "$IPA_NAME"
+    unzip -o "$WORK_PATH/$IPA_NAME" -d "$OUTPUT_PATH/" > /dev/null
+    APP_NAME=$(ls $OUTPUT_PATH/Payload)
 else
     mkdir "$OUTPUT_PATH/Payload"
-    cp -rf "$APP_NAME" "$OUTPUT_PATH/Payload/" > /dev/null
+    cp -rf "$WORK_PATH/$APP_NAME" "$OUTPUT_PATH/Payload/" > /dev/null
 fi
 
 #导入签名
@@ -61,10 +67,23 @@ security unlock-keychain -p "$APP_NAME" "$APP_NAME.keychain"
 security import "$P12_NAME" -k "$APP_NAME.keychain" -P "$P12_PWD" -T /usr/bin/codesign
 
 #初始化信息
-CERT=$(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | tail -1)
-PREFIX=$(echo $CERT | egrep "[(].*[^)]" -o | cut -b 2-)
-BUNDLE=$(cat $PROVISION | egrep -A1 -a "application-identifier" | egrep "$PREFIX[.|-|0-9|a-z|A-Z]*" -o)
-echo "\033[31m$CERT\n$BUNDLE\033[0m"
+BUNDLE=$(cat $PROVISION | egrep -A1 -a "application-identifier" | egrep "<string>.[^<]*" -o | cut -b 9-)
+PREFIX=${BUNDLE%%.*}
+CERT=""
+for i in $(seq 1 $(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | wc -l))
+do
+    CERT=$(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | head -$i | tail -1)
+    if [ -n $(echo $CERT | egrep "$PREFIX" -o) ]; then
+        break
+    else
+        CERT=""
+    fi
+done
+if [ "$CERT" == "" ]; then
+    echo "\033[31mNot found match bundleid in the certificate\033[0m" && exit
+else
+    echo "\033[31m$CERT\n$BUNDLE\033[0m"
+fi
 
 #替换Bundle
 INFO_PLIST=$(ls "$OUTPUT_PATH/Payload/$APP_NAME" | egrep ".*Info.plist" -o)
@@ -72,9 +91,9 @@ INFO_PLIST="$OUTPUT_PATH/Payload/$APP_NAME/$INFO_PLIST"
 plutil -convert xml1 "$INFO_PLIST"
 OLD_BUNDLE=$(cat "$INFO_PLIST" | egrep -A1 -a "CFBundleIdentifier" | egrep "<string>.[^<]*" -o | cut -b 9-)
 NEW_BUNDLE=${BUNDLE#$PREFIX.}
-if [ $OLD_BUNDLE != NEW_BUNDLE ]; then
-    sed -i "" "s/$OLD_BUNDLE/$NEW_BUNDLE}/g" "$INFO_PLIST"
-    echo "\033[31mOld bundle id $OLD_BUNDLE\nReplace to $NEW_BUNDLE\033[0m"
+if [ $OLD_BUNDLE != $NEW_BUNDLE ]; then
+    sed -i "" "s/$OLD_BUNDLE/$NEW_BUNDLE/g" "$INFO_PLIST"
+    echo "\033[31mOld bundleid $OLD_BUNDLE\nReplace to $NEW_BUNDLE\033[0m"
 fi
 plutil -convert binary1 "$INFO_PLIST"
 
