@@ -103,7 +103,7 @@ CERT=""
 for i in $(seq 1 $(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | wc -l))
 do
     CERT=$(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | head -$i | tail -1)
-    if [ "$(echo $CERT | egrep "$PREFIX" -o)" != "" ]; then
+    if [ "$(echo $CERT | egrep "$PREFIX")" != "" ]; then
         break
     else
         CERT=""
