@@ -1,8 +1,5 @@
 #!/bin/sh
 
-SCRIPT_PATH=$(cd $(dirname $BASH_SOURCE); pwd)
-cd $SCRIPT_PATH
-
 #################### 配置 ####################
 
 #p12文件
@@ -11,54 +8,87 @@ P12_NAME="app.p12"
 P12_PWD=""
 #证书
 PROVISION="app.mobileprovision"
-#输出路径
-OUTPUT_PATH="$SCRIPT_PATH/Package"
-#错误信息
-ERROR_MESSAGE="Usage:$(basename $BASH_SOURCE) [-p app] [-r ipa]"
 
-if [ $# -ne 2 ]; then
-    echo $ERROR_MESSAGE && exit
+#################### 参数 ####################
+
+RUN_PATH=$(pwd)
+SCRIPT_PATH=$(cd $(dirname $BASH_SOURCE); pwd)
+cd $SCRIPT_PATH
+
+#使用错误信息
+USAGE_ERROR_MESSAGE="Usage:$(basename $BASH_SOURCE) [-p <app>] [-r <ipa>] <output ipa>"
+
+if [ $# -ne 3 ]; then
+    echo $USAGE_ERROR_MESSAGE && exit
 fi
 
-while getopts ":p:r:o:" OPTION
+for i in {1..2}
 do
-    case "$OPTION" in
-        "p")
-            APP_NAME="$OPTARG"
-            if [ ! -d $APP_NAME ]; then
-                echo "$APP_NAME app not exist" && exit
-            fi
-            WORK_PATH=$(dirname $APP_NAME)
-            APP_NAME=$(basename $APP_NAME)
-            IPA_NAME="${APP_NAME%.*}.ipa"
-            NEED_UNZIP=false;;
-        "r")
-            IPA_NAME="$OPTARG"
-            if [ ! -f $IPA_NAME ]; then
-                echo "$IPA_NAME ipa not exist" && exit
-            fi
-            WORK_PATH=$(dirname $IPA_NAME)
-            IPA_NAME=$(basename $IPA_NAME)
-            APP_NAME="${IPA_NAME%.*}.app"
-            NEED_UNZIP=true;;
-        "?")
-            echo $ERROR_MESSAGE && exit;;
-    esac
+    OPTIND=$i
+    OPTFLAG=false
+    while getopts ":p:r:" OPTION
+    do
+        OPTFLAG=true
+        case "$OPTION" in
+            "p")
+                INPUT_APP="$OPTARG"
+                if [ ! -d $INPUT_APP ]; then
+                    echo "$INPUT_APP app not exist" && exit
+                fi
+                WORK_PATH=$(dirname $INPUT_APP)
+                NEED_UNZIP=false;;
+            "r")
+                INPUT_IPA="$OPTARG"
+                if [ ! -f $INPUT_IPA ]; then
+                    echo "$INPUT_IPA ipa not exist" && exit
+                fi
+                WORK_PATH=$(dirname $INPUT_IPA)
+                NEED_UNZIP=true;;
+            "?")
+                echo $USAGE_ERROR_MESSAGE && exit;;
+        esac
+    done
+    if $OPTFLAG; then
+        break
+    fi
 done
+
+if [ $OPTIND -eq 3 ]; then
+    OUTPUT_IPA=$3
+elif [ $OPTIND -eq 4 ]; then
+    OUTPUT_IPA=$1
+else
+    echo $USAGE_ERROR_MESSAGE && exit
+fi
+if [ "$(echo $WORK_PATH | egrep "^[.]")" != "" ]; then
+    WORK_PATH=$RUN_PATH/$WORK_PATH
+fi
+if [ "$(echo $OUTPUT_IPA | egrep "^[/]")" != "" ]; then
+    OUTPUT_IPA=$OUTPUT_IPA
+elif [ "$(echo $OUTPUT_IPA | egrep "^[.]")" != "" ]; then
+    OUTPUT_IPA="$RUN_PATH/$OUTPUT_IPA"
+else
+    OUTPUT_IPA="$WORK_PATH/$OUTPUT_IPA"
+fi
+if [ -f $OUTPUT_IPA ]; then
+    echo "Already exists same ipa" && exit
+fi
 
 #################### 运行 ####################
 
 #初始化
+OUTPUT_PATH="$SCRIPT_PATH/Package"
 if [ -d $OUTPUT_PATH ]; then
     rm -rf $OUTPUT_PATH
 fi
 mkdir $OUTPUT_PATH
 if $NEED_UNZIP; then
-    unzip -o "$WORK_PATH/$IPA_NAME" -d "$OUTPUT_PATH/" > /dev/null
+    unzip -o "$INPUT_IPA" -d "$OUTPUT_PATH/" > /dev/null
     APP_NAME=$(ls $OUTPUT_PATH/Payload)
 else
+    APP_NAME=$(basename $INPUT_APP)
     mkdir "$OUTPUT_PATH/Payload"
-    cp -rf "$WORK_PATH/$APP_NAME" "$OUTPUT_PATH/Payload/" > /dev/null
+    cp -rf "$INPUT_APP" "$OUTPUT_PATH/Payload/" > /dev/null
 fi
 
 #导入签名
@@ -73,7 +103,7 @@ CERT=""
 for i in $(seq 1 $(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | wc -l))
 do
     CERT=$(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | head -$i | tail -1)
-    if [ -n $(echo $CERT | egrep "$PREFIX" -o) ]; then
+    if [ "$(echo $CERT | egrep "$PREFIX" -o)" != "" ]; then
         break
     else
         CERT=""
@@ -162,7 +192,7 @@ cp "$OUTPUT_PATH/ResourceRules.plist" "$OUTPUT_PATH/Payload/$APP_NAME/ResourceRu
 
 #打包
 /usr/bin/xcrun -sdk iphoneos PackageApplication -v "$OUTPUT_PATH/Payload/$APP_NAME" \
-               -o "$OUTPUT_PATH/$IPA_NAME" --sign "$CERT"                           \
+               -o "$OUTPUT_IPA" --sign "$CERT"                                      \
                --embed "$OUTPUT_PATH/Payload/$APP_NAME/embedded.mobileprovision"    \
                > /dev/null
 
@@ -170,6 +200,4 @@ cp "$OUTPUT_PATH/ResourceRules.plist" "$OUTPUT_PATH/Payload/$APP_NAME/ResourceRu
 security delete-keychain "$APP_NAME.keychain"
 
 #销毁
-rm -rf "$OUTPUT_PATH/$APP_NAME.xcent"
-rm -rf "$OUTPUT_PATH/ResourceRules.plist"
-rm -rf "$OUTPUT_PATH/Payload"
+rm -rf "$OUTPUT_PATH"
