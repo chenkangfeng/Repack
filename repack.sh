@@ -5,7 +5,7 @@
 #p12文件
 P12_NAME="app.p12"
 #p12文件密码
-P12_PWD=""
+P12_PWD="123456"
 #证书
 PROVISION="app.mobileprovision"
 
@@ -97,7 +97,7 @@ security unlock-keychain -p "$APP_NAME" "$APP_NAME.keychain"
 security import "$P12_NAME" -k "$APP_NAME.keychain" -P "$P12_PWD" -T /usr/bin/codesign
 
 #初始化信息
-BUNDLE=$(cat $PROVISION | egrep -A1 -a "application-identifier" | egrep "<string>.[^<]*" -o | cut -b 9-)
+BUNDLE=$(security cms -D -i $PROVISION | egrep -A1 -a "application-identifier" | egrep "<string>.[^<]*" -o | cut -b 9-)
 PREFIX=${BUNDLE%%.*}
 CERT=""
 for i in $(seq 1 $(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | wc -l))
@@ -127,6 +127,11 @@ if [ $OLD_BUNDLE != $NEW_BUNDLE ]; then
 fi
 plutil -convert binary1 "$INFO_PLIST"
 
+#替换证书
+rm -rf "$OUTPUT_PATH/Payload/$APP_NAME/_CodeSignature"
+rm -rf "$OUTPUT_PATH/Payload/$APP_NAME/embedded.mobileprovision"
+cp "$PROVISION" "$OUTPUT_PATH/Payload/$APP_NAME/embedded.mobileprovision"
+
 #生成xcent
 cat > "$OUTPUT_PATH/$APP_NAME.xcent" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -148,52 +153,24 @@ cat > "$OUTPUT_PATH/$APP_NAME.xcent" << EOF
 EOF
 plutil -convert binary1 "$OUTPUT_PATH/$APP_NAME.xcent"
 
-#生成plist
-cat > "$OUTPUT_PATH/ResourceRules.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>rules</key>
-    <dict>
-        <key>.*</key>
-        <true/>
-        <key>^Info.plist$</key>
-        <dict>
-            <key>omit</key>
-            <true/>
-            <key>weight</key>
-            <real>10</real>
-        </dict>
-        <key>^ResourceRules.plist$</key>
-        <dict>
-            <key>omit</key>
-            <true/>
-            <key>weight</key>
-            <real>100</real>
-        </dict>
-    </dict>
-</dict>
-</plist>
-EOF
-plutil -convert binary1 "$OUTPUT_PATH/ResourceRules.plist"
-
-#替换证书
-rm -rf "$OUTPUT_PATH/Payload/$APP_NAME/_CodeSignature"
-rm -rf "$OUTPUT_PATH/Payload/$APP_NAME/embedded.mobileprovision"
-cp "$PROVISION" "$OUTPUT_PATH/Payload/$APP_NAME/embedded.mobileprovision"
-cp "$OUTPUT_PATH/ResourceRules.plist" "$OUTPUT_PATH/Payload/$APP_NAME/ResourceRules.plist"
-
-#签名
-/usr/bin/codesign --force --sign "$CERT"                                                         \
-                  --resource-rules "$OUTPUT_PATH/Payload/$APP_NAME/ResourceRules.plist"          \
-                  --entitlements "$OUTPUT_PATH/$APP_NAME.xcent" "$OUTPUT_PATH/Payload/$APP_NAME" \
-                  > /dev/null
+if [ -f "$OUTPUT_PATH/Payload/$APP_NAME/ResourceRules.plist" ]; then
+    #签名
+    /usr/bin/codesign --force --sign "$CERT"                                                         \
+                      --resource-rules "$OUTPUT_PATH/Payload/$APP_NAME/ResourceRules.plist"          \
+                      --entitlements "$OUTPUT_PATH/$APP_NAME.xcent" "$OUTPUT_PATH/Payload/$APP_NAME" \
+                      > /dev/null
+else
+    #签名
+    /usr/bin/codesign --force --sign "$CERT"                                                         \
+                      --entitlements "$OUTPUT_PATH/$APP_NAME.xcent" "$OUTPUT_PATH/Payload/$APP_NAME" \
+                      > /dev/null
+fi
 
 #打包
-/usr/bin/xcrun -sdk iphoneos PackageApplication -v "$OUTPUT_PATH/Payload/$APP_NAME" \
-               -o "$OUTPUT_IPA" --sign "$CERT"                                      \
-               --embed "$OUTPUT_PATH/Payload/$APP_NAME/embedded.mobileprovision"    \
+/usr/bin/xcrun -sdk iphoneos "$SCRIPT_PATH/package.pl"                           \
+               -v "$OUTPUT_PATH/Payload/$APP_NAME"                               \
+               -o "$OUTPUT_IPA" --sign "$CERT"                                   \
+               --embed "$OUTPUT_PATH/Payload/$APP_NAME/embedded.mobileprovision" \
                > /dev/null
 
 #删除签名
