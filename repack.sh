@@ -91,18 +91,20 @@ else
     cp -rf "$INPUT_APP" "$OUTPUT_PATH/Payload/" > /dev/null
 fi
 
+KEYCHAIN_NAME=$(echo $APP_NAME | tr -d " ")
+
 #导入签名
-security create-keychain -p "$APP_NAME" "$APP_NAME.keychain"
-security unlock-keychain -p "$APP_NAME" "$APP_NAME.keychain"
-security import "$P12_NAME" -k "$APP_NAME.keychain" -P "$P12_PWD" -T /usr/bin/codesign
+security create-keychain -p "$KEYCHAIN_NAME" "$KEYCHAIN_NAME.keychain"
+security unlock-keychain -p "$KEYCHAIN_NAME" "$KEYCHAIN_NAME.keychain"
+security import "$P12_NAME" -k "$KEYCHAIN_NAME.keychain" -P "$P12_PWD" -T /usr/bin/codesign
 
 #初始化信息
 BUNDLE=$(security cms -D -i $PROVISION | egrep -A1 -a "application-identifier" | egrep "<string>.[^<]*" -o | cut -b 9-)
 PREFIX=${BUNDLE%%.*}
 CERT=""
-for i in $(seq 1 $(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | wc -l))
+for i in $(seq 1 $(security find-identity -p codesigning $KEYCHAIN_NAME.keychain | egrep "iPhone.*[^\"]" -o | wc -l))
 do
-    CERT=$(security find-identity -p codesigning $APP_NAME.keychain | egrep "iPhone.*[^\"]" -o | head -$i | tail -1)
+    CERT=$(security find-identity -p codesigning $KEYCHAIN_NAME.keychain | egrep "iPhone.*[^\"]" -o | head -$i | tail -1)
     if [ "$(echo $CERT | egrep "$PREFIX")" != "" ]; then
         break
     else
@@ -174,7 +176,7 @@ fi
                > /dev/null
 
 #删除签名
-security delete-keychain "$APP_NAME.keychain"
+security delete-keychain "$KEYCHAIN_NAME.keychain"
 
 #销毁
 rm -rf "$OUTPUT_PATH"
