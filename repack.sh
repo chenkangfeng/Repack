@@ -151,7 +151,7 @@ OLD_BUILD_LINE=$[$OLD_BUILD_LINE+1]
 if [ $NEW_BUILD ]; then
     if [ $OLD_BUILD != $NEW_BUILD ]; then
         sed -i "" "${OLD_BUILD_LINE}s/$OLD_BUILD/$NEW_BUILD/" "$INFO_PLIST"
-        echo "\033[31mOld version $OLD_BUILD\nReplace to $NEW_BUILD\033[0m"
+        echo "\033[31mOld build $OLD_BUILD\nReplace to $NEW_BUILD\033[0m"
     fi
 fi
 
