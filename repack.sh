@@ -8,6 +8,10 @@ P12_NAME="app.p12"
 P12_PWD="123456"
 #证书
 PROVISION="app.mobileprovision"
+#新Version(不填则使用旧的)
+NEW_VERSION=
+#新Build(不填则使用旧的)
+NEW_BUILD＝
 
 #################### 参数 ####################
 
@@ -117,16 +121,40 @@ else
     echo "\033[31m$CERT\n$BUNDLE\033[0m"
 fi
 
-#替换Bundle
 INFO_PLIST=$(ls "$OUTPUT_PATH/Payload/$APP_NAME" | egrep ".*Info.plist" -o)
 INFO_PLIST="$OUTPUT_PATH/Payload/$APP_NAME/$INFO_PLIST"
 plutil -convert xml1 "$INFO_PLIST"
+
+#替换Bundle
 OLD_BUNDLE=$(cat "$INFO_PLIST" | egrep -A1 -a "CFBundleIdentifier" | egrep "<string>.[^<]*" -o | cut -b 9-)
 NEW_BUNDLE=${BUNDLE#$PREFIX.}
 if [ $OLD_BUNDLE != $NEW_BUNDLE ]; then
     sed -i "" "s/$OLD_BUNDLE/$NEW_BUNDLE/g" "$INFO_PLIST"
     echo "\033[31mOld bundleid $OLD_BUNDLE\nReplace to $NEW_BUNDLE\033[0m"
 fi
+
+#替换Version
+OLD_VERSION=$(cat "$INFO_PLIST" | egrep -A1 -a "CFBundleVersion" | egrep "<string>.[^<]*" -o | cut -b 9-)
+OLD_VERSION_LINE=$(cat "$INFO_PLIST" | egrep -n "CFBundleVersion" | cut -d ":" -f 1)
+OLD_VERSION_LINE=$[$OLD_VERSION_LINE+1]
+if [ $NEW_VERSION ]; then
+    if [ $OLD_VERSION != $NEW_VERSION ]; then
+        sed -i "" "${OLD_VERSION_LINE}s/$OLD_VERSION/$NEW_VERSION/" "$INFO_PLIST"
+        echo "\033[31mOld version $OLD_VERSION\nReplace to $NEW_VERSION\033[0m"
+    fi
+fi
+
+#替换Build
+OLD_BUILD=$(cat "$INFO_PLIST" | egrep -A1 -a "CFBundleShortVersionString" | egrep "<string>.[^<]*" -o | cut -b 9-)
+OLD_BUILD_LINE=$(cat "$INFO_PLIST" | egrep -n "CFBundleShortVersionString" | cut -d ":" -f 1)
+OLD_BUILD_LINE=$[$OLD_BUILD_LINE+1]
+if [ $NEW_BUILD ]; then
+    if [ $OLD_BUILD != $NEW_BUILD ]; then
+        sed -i "" "${OLD_BUILD_LINE}s/$OLD_BUILD/$NEW_BUILD/" "$INFO_PLIST"
+        echo "\033[31mOld version $OLD_BUILD\nReplace to $NEW_BUILD\033[0m"
+    fi
+fi
+
 plutil -convert binary1 "$INFO_PLIST"
 
 #替换证书
